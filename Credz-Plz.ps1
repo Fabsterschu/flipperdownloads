@@ -86,19 +86,47 @@ function Get-Creds {
 }
 #>
 function Get-Creds {
-    Write-Host "--- [STARTING CREDENTIAL PROMPT TEST] ---"
-    # Directly call the prompt and check the result immediately
-    #$cred = $Host.UI.PromptForCredential('Failed Authentication','',[Environment]::UserDomainName+'\'+[Environment]::UserName,[Environment]::UserDomainName)
-	$cred = $Credential = $Host.UI.PromptForCredential("Need credentials", "Please enter your user name and password.", "", "NetBiosUserName")
-    Write-Host "--- [CREDENTIAL PROMPT RESULT] ---"
+    $cred = $null
+    $form = $null
 
-    if ($cred) {
-        Write-Host "Credential object successfully captured."
-        # Return a mock successful credential structure if the object exists
-        return $cred.GetNetworkCredential() | fl 
-    } else {
-        Write-Host "Credential prompt returned null (User likely canceled)."
-        return $null
+    while ($form -eq $null) {
+        # 1. Prompt for credentials using the reliable built-in cmdlet
+        # We use Get-Credential, which automatically displays the standard GUI prompt
+        try {
+            $credObject = Get-Credential -UserName ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)
+            $cred = $credObject
+        }
+        catch {
+            # Handle critical failures during the Get-Credential launch itself
+            $msgBody = "Error launching credential prompt. Please ensure the system UI is available."
+            $msgTitle = "Error"
+            $msgButton = 'Ok'
+            $msgImage = 'Stop'
+            $Result = [System.Windows.MessageBox]::Show($msgBody,$msgTitle,$msgButton,$msgImage)
+            Write-Host "The user clicked: $Result"
+            $form = $null # Continue loop
+            continue
+        }
+
+        # 2. Validation Check: Check if the retrieved object or its password is empty
+        # Note: Get-Credential returns a PSCredential object which has a .Password property.
+        if ([string]::IsNullOrWhiteSpace($cred.Password))
+        {
+            # This triggers the second popup (Error: Empty Credentials)
+            $msgBody = "Credentials cannot be empty! Please try again."
+            $msgTitle = "Error"
+            $msgButton = 'Ok'
+            $msgImage = 'Stop'
+            $Result = [System.Windows.MessageBox]::Show($msgBody,$msgTitle,$msgButton,$msgImage)
+            Write-Host "The user clicked: $Result"
+            $form = $null # Loop again, forcing the script to re-prompt
+        }
+        else {
+            # 3. Success Path: Credentials are valid
+            # Convert the PSCredential object into the format expected by the rest of your script (which seemed to need NetworkCredential style output)
+            $creds = New-Object Net.NetworkCredential($cred.UserName, $cred.Password) | Select-Object Name, Password, Domain
+            return $creds
+        }
     }
 }
 
