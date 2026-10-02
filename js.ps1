@@ -59,7 +59,7 @@ Add-Type -AssemblyName System.ComponentModel
 "@
  
 #Movie Path
-[uri]$VideoSource = "$env:TMP\js\1.mp4"
+[uri]$VideoSource = "$env:TMP\js\jumpscare.mp4"
  
 #Devide All Objects on XAML
 $XAMLReader=(New-Object System.Xml.XmlNodeReader $XAML)
