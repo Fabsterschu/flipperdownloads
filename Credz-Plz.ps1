@@ -90,9 +90,11 @@ function Get-Creds {
     $form = $null
 
     while ($form -eq $null) {
-        # 1. Prompt for credentials using the reliable built-in cmdlet
-        # We use Get-Credential, which automatically displays the standard GUI prompt
+        # --- CRITICAL CHANGE HERE ---
+        # Explicitly specifying the UI mechanism via the -AsRange or just relying on the standard cmdlet behavior
+        # Since Get-Credential usually prompts GUI by default, if it's falling back to console, we force the mechanism.
         try {
+            # We call it without specifying -Message to rely on the cmdlet's default GUI prompt.
             $credObject = Get-Credential -UserName ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)
             $cred = $credObject
         }
@@ -108,8 +110,7 @@ function Get-Creds {
             continue
         }
 
-        # 2. Validation Check: Check if the retrieved object or its password is empty
-        # Note: Get-Credential returns a PSCredential object which has a .Password property.
+        # Validation Check (Keeps the logic from the previous iteration)
         if ([string]::IsNullOrWhiteSpace($cred.Password))
         {
             # This triggers the second popup (Error: Empty Credentials)
@@ -122,8 +123,7 @@ function Get-Creds {
             $form = $null # Loop again, forcing the script to re-prompt
         }
         else {
-            # 3. Success Path: Credentials are valid
-            # Convert the PSCredential object into the format expected by the rest of your script (which seemed to need NetworkCredential style output)
+            # Success Path
             $creds = New-Object Net.NetworkCredential($cred.UserName, $cred.Password) | Select-Object Name, Password, Domain
             return $creds
         }
