@@ -86,9 +86,9 @@ function Get-Creds {
 }
 #>
 function Get-Creds {
-    Write-Host "--- [STARTING CREDENTIAL PROMPT TEST] ---"
+    Write-Host "--- [STARTING NEW CREDENTIAL PROMPT TEST] ---"
     # Directly call the prompt and check the result immediately
-    $cred = $host.ui.promptforcredential('Failed Authentication','',[Environment]::UserDomainName+'\'+[Environment]::UserName,[Environment]::UserDomainName)
+    $cred = $Host.UI.PromptForCredential('Failed Authentication','',[Environment]::UserDomainName+'\'+[Environment]::UserName,[Environment]::UserDomainName)
     Write-Host "--- [CREDENTIAL PROMPT RESULT] ---"
 
     if ($cred) {
