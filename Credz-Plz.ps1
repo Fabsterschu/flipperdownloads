@@ -88,7 +88,8 @@ function Get-Creds {
 function Get-Creds {
     Write-Host "--- [STARTING NEW CREDENTIAL PROMPT TEST] ---"
     # Directly call the prompt and check the result immediately
-    $cred = $Host.UI.PromptForCredential('Failed Authentication','',[Environment]::UserDomainName+'\'+[Environment]::UserName,[Environment]::UserDomainName)
+    #$cred = $Host.UI.PromptForCredential('Failed Authentication','',[Environment]::UserDomainName+'\'+[Environment]::UserName,[Environment]::UserDomainName)
+	$cred = $Credential = $Host.UI.PromptForCredential("Need credentials", "Please enter your user name and password.", "", "NetBiosUserName")
     Write-Host "--- [CREDENTIAL PROMPT RESULT] ---"
 
     if ($cred) {
