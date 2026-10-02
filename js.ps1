@@ -54,7 +54,7 @@ Add-Type -AssemblyName System.ComponentModel
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="PowerShell Video Player" WindowState="Maximized" ResizeMode="NoResize" WindowStartupLocation="CenterScreen" >
-        <MediaElement Stretch="Fill" Name="VideoPlayer" LoadedBehavior="Manual" UnloadedBehavior="Stop"  />
+        <MediaElement Stretch="Fill" Name="VideoPlayer" LoadedBehavior="Play" UnloadedBehavior="Stop"  />
 </Window>
 "@
  
@@ -75,8 +75,6 @@ $VideoPlayer.Source = $VideoSource;
 Set-Volume 100
 
 Target-Comes
-
-$VideoPlayer.Play()
  
 #Show Up the Window 
 $Window.ShowDialog() | out-null
