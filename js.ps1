@@ -75,6 +75,12 @@ $VideoPlayer.Source = $VideoSource;
 Set-Volume 100
 
 Target-Comes
+
+# Zorg dat het venster de focus krijgt zodra het opent
+$Window.Add_Loaded({
+    $Window.Activate()
+    $Window.Focus()
+})
  
 #Show Up the Window 
 $Window.ShowDialog() | out-null
